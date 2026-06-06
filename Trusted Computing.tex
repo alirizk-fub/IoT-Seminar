@@ -1,127 +1,227 @@
-\documentclass[journal, a4paper, 11pt]{IEEEtran}
+\documentclass[conference,11pt,a4paper]{IEEEtran}
 
-\usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
-\usepackage[english]{babel}
-\usepackage{cite}
-\usepackage{amsmath, amssymb}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
 \usepackage{graphicx}
-\usepackage{hyperref}
+\usepackage{url}
+\usepackage{cite}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{enumitem}
 \usepackage{setspace}
-\usepackage{microtype}
 
-\onehalfspacing
-
-\title{Trusted Computing for IoT Devices:\\
-       Goals, Techniques and Limitations}
-
-\author{Ali Rizk\\
-        \textit{Freie Universität Berlin}\\
-        Berlin, Germany\\
-        ali.rizk@fu-berlin.de}
-
-\date{}
+\linespread{1.5}
 
 \begin{document}
+
+\title{Trusted Computing for IoT Devices:\\Goals, Techniques, and Limitations}
+
+\author{
+  \IEEEauthorblockN{Ali Rizk}
+  \IEEEauthorblockA{Freie Universität Berlin\\
+  Berlin, Germany\\
+  Email: ali.rizk@fu-berlin.de}
+}
 
 \maketitle
 
 \begin{abstract}
-This report discusses trusted computing concepts in the context of
-Internet of Things (IoT) devices. We examine the goals, core techniques,
-and inherent limitations of applying hardware-based security mechanisms
-such as TPMs, Trusted Execution Environments (TEEs), and remote
-attestation to resource-constrained IoT deployments.
+The Internet of Things (IoT) connects large numbers of small, often highly constrained devices that are deployed for long periods of time in partly untrusted environments. This creates a broad and long-lived attack surface. Trusted computing primitives such as hardware roots of trust, secure boot, Trusted Execution Environments (TEEs), and remote attestation aim to provide stronger guarantees for device identity, software integrity, and secure firmware updates even under tight cost and power budgets. This seminar paper surveys the main goals of trusted computing in the IoT context, in particular secure device identity, integrity protection, update mechanisms, and protection of keys and sensitive data. It then gives an overview of core techniques and standards, including TPM- and DICE-inspired roots of trust, ARM TrustZone-based TEEs, the IETF Remote ATtestation procedureS (RATS) architecture, and the Software Updates for the IoT (SUIT) framework, and briefly discusses representative implementations. Finally, it outlines current limitations and open challenges such as hardware overheads, heterogeneity, deployment complexity, and privacy issues, and points to directions for future work.
 \end{abstract}
 
 \begin{IEEEkeywords}
-Trusted Computing, IoT Security, TPM, TrustZone, Remote Attestation,
-Secure Boot, TEE, IETF RATS, IETF SUIT
+Internet of Things, trusted computing, root of trust, TPM, TrustZone, TEE, remote attestation, SUIT, DICE, secure firmware update.
 \end{IEEEkeywords}
 
+\section{Introduction and Motivation}
+The Internet of Things (IoT) is increasingly used in critical domains such as industrial control, energy, healthcare, and transportation. In these settings, compromised devices can cause physical damage, long outages, or serious data breaches. At the same time, many IoT nodes are microcontroller-based systems with only a few kilobytes of RAM and limited flash memory, built under strict cost and energy constraints and often deployed without professional administration. In this situation, purely software-based hardening is usually not enough to maintain strong assurance about the correctness and integrity of device behavior over many years.
 
-\section{Introduction \& Motivation}
-\label{sec:introduction}
+Trusted computing tries to address this problem by anchoring important security properties in small, well-defined hardware and firmware components that together form a \emph{root of trust}. Typical mechanisms include hardware-protected device secrets, secure or measured boot, isolated execution environments, and cryptographic protocols that allow remote parties to check which software is actually running on a device. Applied to IoT, these primitives aim to answer questions such as: ``Is this device really the one it claims to be?'', ``Is it running authorized firmware?'', and ``Can its keys and sensitive data be used safely?'' even when attackers are powerful and devices have long lifetimes.
 
-% TODO: Start writing...
+In recent years, several concrete trusted computing building blocks have become available for IoT-class platforms. Examples include Trusted Platform Modules (TPMs) and DICE-style concepts for hardware-backed identities and measured boot, TrustZone-based TEEs that isolate security-critical code and data, and standardized remote attestation and secure update frameworks developed in the IETF and by industry consortia.\cite{tcg_iot,tee_trustcom,rats_arch,suit_arch} However, integrating these mechanisms into very constrained devices and heterogeneous IoT deployments remains technically and organizationally challenging.
 
+This seminar paper focuses on trusted computing for IoT devices, not on IoT security in general. Section~\ref{sec:background} introduces the IoT setting and threat model only as far as needed to motivate trusted computing goals. Section~\ref{sec:goals} then discusses what trusted computing should achieve in the IoT context. Section~\ref{sec:techniques} surveys core mechanisms such as TPM-/DICE-style roots of trust, TrustZone-based TEEs, and standardized attestation and update frameworks, and presents representative examples. Section~\ref{sec:limitations} summarizes limitations and open challenges that currently prevent trusted computing from ``solving'' IoT security.
 
 \section{Background Concepts}
 \label{sec:background}
 
-\subsection{IoT Architecture and Threat Model}
-\label{subsec:iot-arch}
+\subsection{IoT Setting and Constraints}
+In this paper, IoT deployments are understood as systems with many small, often unattended devices that interact with each other and with back-end services over untrusted networks. The devices of interest are microcontroller-class nodes with limited RAM and flash, often powered by batteries or energy harvesting and connected via low-power wireless or simple wired links. They run firmware provided by a manufacturer or operator, can be physically accessible to attackers, and typically need to be remotely managed and updated over long lifetimes.
 
-% TODO: Start writing...
+\subsection{Threat Model Relevant to Trusted Computing}
+The threat model is driven by the questions trusted computing is supposed to answer. We assume network attackers who can eavesdrop, modify, or inject traffic, and software attackers who exploit bugs in application code or middleware to gain arbitrary code execution on the device. In many deployments, local adversaries can also read or modify external flash, access debug interfaces, or perform basic fault injection.
 
-\subsection{Trusted Computing Fundamentals}
-\label{subsec:tc-fundamentals}
+The main security goals are: (i) preventing attackers from forging device identities or impersonating devices, (ii) detecting or preventing unauthorized changes to boot code and firmware, (iii) protecting long-term keys and other sensitive assets even if application code is compromised, and (iv) providing remote parties with verifiable evidence about a device's software state. Importantly, we do \emph{not} assume that all software on the device is correct. Instead, trusted computing aims to limit what compromised software can do and to make deviations from expected configurations detectable.
 
-% TODO: Start writing...
+\subsection{Trusted Computing Primitives for IoT}
+Trusted computing for IoT builds on a small set of hardware and firmware mechanisms that together form a root of trust. The most relevant primitives are:
 
+\begin{itemize}
+  \item \textbf{Hardware-protected device secrets:} Small pieces of key material or seeds stored in non-volatile memory that is inaccessible to normal software or only usable through restricted interfaces. These secrets form the basis for device identities and session keys and can be bound to specific software states.
+  \item \textbf{Secure and measured boot:} A boot sequence in which each stage verifies the authenticity and integrity of the next (secure boot) and/or records cryptographic measurements of loaded code in tamper-resistant registers (measured boot). This anchors the software stack in immutable code and configuration.
+  \item \textbf{TPM- and DICE-style roots of trust:} TPM~2.0 devices provide standardized interfaces for secure storage, cryptographic operations, platform configuration registers, and attestation and are available for embedded platforms.\cite{tcg_tpm_iot} For more constrained systems, DICE-like architectures use simple hardware features and measured boot to derive stage-specific keys and identities without a full TPM.
+  \item \textbf{Trusted Execution Environments (TEEs):} TEEs such as ARM TrustZone provide hardware-enforced isolation between a small security-critical environment and the rest of the system.\cite{tee_trustcom} On microcontrollers, TrustZone-M splits the system into a secure world, which typically hosts key management, secure boot, and cryptographic services, and a non-secure world that runs application logic.\cite{tzm_runtime,tzm_framework}
+\end{itemize}
+
+These primitives can be combined so that only authorized firmware can access certain keys, that device identities and keys change when firmware changes, and that the resulting state can be reported to remote parties.
+
+\subsection{Remote Attestation}
+Remote attestation (RA) is a core trusted computing protocol for IoT. In RA, an \emph{attester} (the IoT device) produces signed evidence about its current software state, typically in the form of cryptographic measurements of its boot chain and configuration. A remote \emph{verifier} checks this evidence against reference values and policies and decides whether to trust the device.\cite{ra_survey,resource_constrained}
+
+On constrained IoT hardware, RA must be designed so that an attacker who controls most of the software stack cannot forge valid evidence. Hybrid hardware/software designs such as SMART, VRASED, and later GAROTA implement a minimal hardware-protected region that stores attestation keys and code and enforces atomic execution of attestation routines, while keeping hardware costs low.\cite{root_of_trust_lowend,vRased_usenix} The IETF RATS architecture provides an interoperable framework and data formats for conveying such evidence and appraisal results between attesters, verifiers, and relying parties, which is especially relevant in heterogeneous IoT deployments.\cite{rats_arch}
 
 \section{Goals of Trusted Computing in IoT}
 \label{sec:goals}
 
-% TODO: Start writing...
+\subsection{Secure Device Identity}
+A fundamental goal is to give each IoT device a strong, non-forgeable identity that can be used to authenticate it to back-end services and to enforce authorization policies. Instead of relying on easily cloned identifiers such as MAC addresses, trusted computing designs use cryptographic keys that are derived from or protected by hardware secrets, often tied to measured firmware state so that identity is meaningful only when the device is running authorized software.
 
+DICE-style architectures derive distinct compound device identifiers and key pairs for each firmware stage. If firmware is modified, the resulting identities change, and verifiers can detect this. Similar ideas are used in TPM-based designs that bind keys to specific platform configuration register (PCR) values and only allow their usage when the device has booted into an expected state.\cite{tcg_tpm_iot}
+
+\subsection{Software and Configuration Integrity}
+Trusted computing mechanisms also aim to ensure that code and configuration running on a device have not been tampered with, both at boot time and, ideally, during runtime.\cite{ra_survey,resource_constrained} Secure and measured boot chains start from a hardware root of trust that measures each stage of the boot process and only transfers control to code that meets policy, often recording measurements in tamper-resistant storage for later attestation.\cite{root_of_trust_lowend} On very constrained devices, minimal hardware extensions combined with carefully verified software can implement attestation of firmware images and, in some designs, provide guarantees about control-flow or memory contents at runtime.\cite{root_of_trust_lowend,vRased_usenix}
+
+\subsection{Secure Updates and Life-Cycle Management}
+Given the long lifetimes of many IoT deployments, trusted computing mechanisms must support secure, authenticated firmware and configuration updates throughout the device life cycle. The IETF SUIT work defines a firmware update architecture and manifest format that captures metadata about firmware images, dependencies, cryptographic signatures, and update conditions in a way that is suitable for constrained devices.\cite{suit_arch} A prototype study shows that secure update solutions based on open standards such as SUIT can be implemented on devices with less than 32~kB of RAM and 128~kB of flash across several commercial microcontroller platforms.\cite{suit_survey}
+
+Beyond secure transport and signature verification, manufacturers and operators need mechanisms for post-update verification and attestation to ensure that devices have actually transitioned to known-good states. This links secure update mechanisms to remote attestation and fleet management.\cite{rats_arch,suit_arch}
+
+\subsection{Protection of Keys and Sensitive Code/Data}
+Another critical goal is to protect cryptographic keys and other sensitive assets against both software and physical attacks. Trusted computing modules provide isolated storage for device keys and can restrict their usage to specific measured software states or policies, which limits the impact of application-level compromises.\cite{tcg_tpm_iot} TEEs for microcontrollers, such as TrustZone-M, partition memory and peripherals into secure and non-secure domains, allowing security-critical services to run in an isolated environment even when the rest of the system executes potentially vulnerable code.\cite{tzm_runtime,tzm_framework}
+
+\subsection{Operating Under IoT Constraints}
+All of these goals must be achieved under strict constraints on hardware cost, power consumption, and available memory, and across heterogeneous platforms and vendors.\cite{suit_survey,ra_survey} Roots of trust for low-end MCUs should introduce only modest hardware overhead in terms of logic and flip-flops while keeping attestation runtimes acceptable for small firmware images.\cite{root_of_trust_lowend,vRased_usenix} Protocols and standards must accommodate devices that only occasionally connect to the network, have limited bandwidth, or rely on simple transports such as CoAP or MQTT.\cite{rats_arch,suit_arch}
 
 \section{Main Techniques}
 \label{sec:techniques}
 
-\subsection{TPM and Hardware Root of Trust}
-\label{subsec:tpm}
+\subsection{TPM and Hardware Roots of Trust}
+The Trusted Platform Module (TPM) is a dedicated hardware component that provides secure key storage, cryptographic operations, platform configuration registers for measured boot, and support for attestation. Originally developed for PCs and servers, TPM~2.0 has also been used in embedded and IoT contexts, where it can serve as a standardized hardware root of trust for device identity, integrity measurements, and policy-based key usage.\cite{tcg_tpm_iot}
 
-% TODO: Start writing...
+In IoT settings, discrete TPMs or integrated TPM-like functions can store endorsement keys and certificates, perform secure boot measurements, and issue attestation quotes that prove both device identity and software state to remote services. For example, TPM-based designs can bind cryptographic material to specific firmware hashes, preventing keys from being used if the device boots untrusted code, and can support secure provisioning and onboarding protocols for industrial deployments.\cite{tcg_tpm_iot,tcg_iot}
 
-\subsection{Trusted Execution Environments}
-\label{subsec:tee}
+For smaller devices where a full TPM is not feasible, DICE-style approaches follow similar principles with fewer hardware requirements: a per-device secret in silicon is combined with measurements of each boot stage to derive fresh keys and identifiers for that stage.
 
-% TODO: Start writing...
+\subsection{Trusted Execution Environments for IoT}
+Trusted Execution Environments (TEEs) provide isolated execution and secure storage within a processor, typically with hardware support for separating memory regions and routing interrupts and exceptions.\cite{tee_trustcom} ARM TrustZone is widely deployed in smartphones and is becoming common in processors aimed at IoT and embedded systems, with TrustZone-A targeting application processors and TrustZone-M targeting microcontrollers.\cite{tzm_runtime,tzm_framework} A TEE can host security-sensitive services such as key management, secure boot firmware, cryptographic libraries, and parts of an update or attestation agent, shielding them from a potentially compromised rich execution environment.
 
-\subsection{Remote Attestation}
-\label{subsec:attestation}
+Recent work performs systematic analyses of runtime software security in TrustZone-M-based IoT devices. Luo~et~al.\ demonstrate that naive partitioning and insufficient hardening still allow buffer overflows, return-oriented programming (ROP), and misuse of non-secure callable interfaces, even though TrustZone-M provides strong isolation primitives.\cite{tzm_runtime} To address this, they propose a comprehensive security framework that combines TrustZone-M hardware with systematic programming guidelines and additional mitigations such as function-level address space layout randomization (fASLR) for secure-world code.\cite{tzm_framework} These results highlight that TEEs are powerful building blocks, but correct and secure usage requires careful design and implementation.\cite{tee_trustcom}
 
-% TODO: Start writing...
+\subsection{Remote Attestation Mechanisms}
+A variety of remote attestation schemes have been proposed specifically for constrained IoT devices. Software-only attestation relies on timing and architecture-specific assumptions and is generally considered too fragile for realistic adversaries, motivating hybrid approaches that use minimal hardware support.\cite{ra_survey,resource_constrained} Designs such as SMART, VRASED, and GAROTA implement a small, immutable hardware module that protects attestation code and keys, combined with software that computes measurements over specified memory regions and communicates with the verifier.\cite{root_of_trust_lowend,vRased_usenix}
 
-\subsection{Secure Firmware Updates}
-\label{subsec:suit}
+VRASED, for example, is a verified hardware/software co-design that provides remote attestation for low-end devices such as TI MSP430-based platforms, with machine-checked proofs that the implementation meets its security specification under a clear adversary model.\cite{vRased_usenix} GAROTA generalizes these ideas into an active root of trust architecture capable of enforcing a range of security properties beyond plain attestation while keeping hardware overheads modest.\cite{root_of_trust_lowend} Other work explores integrating RA with lightweight key exchange protocols to support combined authentication and attestation in constrained networks.\cite{ra_survey,resource_constrained}
 
-% TODO: Start writing...
+\subsection{IETF RATS}
+The IETF RATS working group defines an architecture and standard data formats for remote attestation, intended to support heterogeneous attesters, verifiers, and relying parties across domains including IoT. The architecture is now standardized as RFC~9334.\cite{rats_arch} In the RATS model, an attester produces evidence about its state (such as measurements of firmware and configuration), a verifier appraises this evidence against policies and reference values, and a relying party makes decisions based on attestation results issued by the verifier.
 
+RATS documents specify information models and concrete encodings based on CBOR Web Tokens and JSON Web Tokens, as well as bindings to existing transport protocols such as DTLS and CoAP that are commonly used in IoT environments.\cite{rats_arch,charra_pm} By providing interoperable formats for evidence, endorsements, and attestation results, RATS aims to avoid ad hoc RA protocols and to enable scalable verification frameworks that can reason about device posture across large fleets, especially when devices from multiple vendors must coexist and be managed by shared infrastructure.\cite{rats_arch,tcg_iot}
+
+\subsection{Secure Firmware Update: IETF SUIT}
+Secure firmware updates are widely recognized as essential for maintaining the security of IoT devices over time, yet many devices still ship without robust update mechanisms. The IETF SUIT work defines a firmware update architecture and manifest format that captures metadata about firmware images, dependencies, cryptographic signatures, and update conditions in a transport-agnostic way tailored for constrained devices, documented in RFC~9019.\cite{suit_arch}
+
+A detailed study by Ammar~et~al.\ implements a SUIT-based update solution on several commercial microcontroller platforms and shows that a standards-based secure update mechanism can fit within 32~kB of RAM and 128~kB of flash, while providing authenticated, integrity-protected updates with rollback and dependency handling.\cite{suit_survey} SUIT manifests can be combined with roots of trust and attestation: secure boot ensures that only signed firmware is executed, SUIT metadata describes the expected state, and RA allows management systems to verify that images have been correctly installed and that devices are in compliant configurations.\cite{suit_arch,rats_arch}
 
 \section{Example Solutions and Case Studies}
-\label{sec:casestudies}
 
-\subsection{TPM-Based IoT Platform}
-\label{subsec:case-tpm}
+\subsection{TPM- and DICE-Based IoT Platforms}
+Several works explore how TPM~2.0 and related trusted computing components can secure IoT platforms. One direction integrates TPMs into edge gateways and industrial controllers, using them to establish strong device identity through endorsement keys, protect credentials, and implement measured boot chains that anchor system integrity.\cite{tcg_tpm_iot,tcg_iot} Such platforms support attestation protocols in which gateways or devices generate quotes over PCRs so that back-end systems can verify that only authorized firmware and configurations are running before granting access to sensitive resources.
 
-% TODO: Start writing...
+For smaller devices, DICE-style architectures provide a more lightweight approach that requires only simple silicon features and basic cryptographic functions. A device-specific secret is combined with measurements of each boot stage to derive unique compound device identifiers and keys for each firmware layer. Any change in firmware leads to new identities and keys, enabling strong binding between device identity and software state and supporting automatic re-keying after patching with low hardware complexity.
 
-\subsection{TrustZone-Based IoT System}
-\label{subsec:case-tz}
+\subsection{TrustZone-M-Based Secure IoT Systems}
+TrustZone-M extends ARM TrustZone concepts to microcontrollers, enabling partitioning of code, data, and peripherals into secure and non-secure domains on a single core, which is attractive for MCU-based IoT devices.\cite{tzm_runtime} Luo~et~al.\ propose a comprehensive security framework for IoT devices based on TrustZone-M-enabled MCUs. It covers hardware configuration, secure boot, runtime software protections, network security, and over-the-air update in an integrated way.\cite{tzm_framework}
 
-% TODO: Start writing...
+They demonstrate the framework on Microchip SAM~L11-based air quality monitoring devices, showing that end-to-end secure IoT applications built on TrustZone-M are feasible under realistic constraints.\cite{tzm_framework} At the same time, their runtime analysis reveals that naive TrustZone-M system designs remain vulnerable to classic software exploits such as stack-based and heap-based buffer overflows, ROP attacks, and format string vulnerabilities, especially at secure/non-secure boundaries.\cite{tzm_runtime,tzm_framework} Mitigations such as fASLR for secure-world code further illustrate that TEEs are necessary but not sufficient: sound partitioning and robust secure coding practices remain essential.\cite{tee_trustcom}
 
-\subsection{Remote Attestation for Constrained Devices}
-\label{subsec:case-rats}
+\subsection{Remote Attestation for Constrained Devices: VRASED}
+Remote attestation schemes like VRASED represent a third category of trusted computing solutions tailored to low-end embedded devices. VRASED is a verified hardware/software co-design that provides remote attestation for simple microcontrollers, combining a small hardware module that protects attestation code and keys with software routines that compute integrity measurements over device memory.\cite{vRased_usenix}
 
-% TODO: Start writing...
+The architecture has been implemented and evaluated on TI MSP430-based platforms and FPGA prototypes and comes with machine-checked proofs that both hardware and software components meet a formal security specification. This verifiable-by-design approach is particularly valuable for IoT devices that may be deployed in critical environments and are difficult to patch or replace, since subtle implementation bugs in RA mechanisms themselves could otherwise undermine security.\cite{vRased_usenix,ra_survey} Combined with work like GAROTA and other RA architectures for low-end MCUs, these schemes demonstrate that strong roots of trust are feasible even on very constrained devices.\cite{root_of_trust_lowend}
 
+\subsection{Standards-Based Secure Firmware Updates}
+As a complement to hardware roots of trust and RA, secure firmware update frameworks based on SUIT have been prototyped on a range of commercial IoT platforms using open standards and open-source libraries.\cite{suit_survey} Experimental evaluations show that a SUIT-based update solution can provide authenticated, integrity-protected updates with robust rollback and dependency handling on devices with less than 32~kB of RAM and 128~kB of flash.\cite{suit_survey,suit_arch} These prototypes also demonstrate how firmware update mechanisms can interact with hardware roots of trust and attestation to provide end-to-end assurance for update processes in the field.\cite{rats_arch}
 
 \section{Limitations and Open Challenges}
 \label{sec:limitations}
 
-% TODO: Start writing...
+\subsection{Hardware and Performance Overheads}
+Even minimal roots of trust incur area, power, and performance overheads that may be significant for the smallest IoT devices. Studies of attestation architectures and runtime integrity enforcement for low-end microcontrollers report non-trivial logic overheads and attestation times on the order of hundreds of milliseconds to seconds for kilobytes of firmware.\cite{root_of_trust_lowend,vRased_usenix} While these figures are acceptable for many applications, ultra-low-cost or ultra-low-power designs may still struggle to accommodate such hardware additions, especially when combined with other security features.
 
+TEEs like TrustZone-M also introduce complexity in memory and peripheral partitioning and can affect real-time behavior and system performance if not carefully engineered.\cite{tzm_runtime,tzm_framework} Balancing strong security guarantees with predictable timing and minimal energy consumption remains an open optimization problem, particularly for battery-powered devices and networks where frequent attestation or update operations may be too expensive.\cite{suit_survey,resource_constrained}
+
+\subsection{Heterogeneity and Interoperability}
+IoT ecosystems are highly heterogeneous, spanning devices from many vendors with different processors, boot chains, cryptographic libraries, and management stacks.\cite{tcg_iot,ra_survey} While standards such as RATS and SUIT provide common frameworks, integrating them consistently across diverse hardware capabilities and legacy systems is a significant engineering challenge.\cite{rats_arch,suit_arch} Manufacturers may implement only subsets of specifications or introduce proprietary extensions, leading to incompatibilities that undermine the goal of scalable, interoperable attestation and update infrastructures.\cite{tcg_iot,charra_pm}
+
+Device identity and key provisioning are also fragmented. Some devices rely on TPMs and manufacturer-issued certificates, others on DICE-style identities, and many legacy devices still lack hardware-backed identities altogether.\cite{tcg_tpm_iot,tcg_iot} Building end-to-end trust models that can reason about and enforce policies across such mixed fleets is an active area of research and standardization.\cite{rats_arch,resource_constrained}
+
+\subsection{Deployment, Usability, and Life-Cycle Issues}
+Even when trusted computing primitives are available in hardware, their benefits depend on correct configuration, robust update processes, and operator-friendly management tools. Developers and integrators often lack experience with configuring secure boot, partitioning TEEs, or defining attestation policies, which can lead to misconfigurations that silently weaken security.\cite{tzm_framework,tcg_iot} Surveys and case studies indicate that, although security is recognized as important, cost, time-to-market pressure, and lack of clear guidance frequently lead to under-use or misuse of available security features.\cite{suit_survey,tcg_iot}
+
+Life-cycle management adds further challenges: devices may need to be securely decommissioned, ownership transferred, or cryptographic material rotated, and these processes must interact correctly with roots of trust and attestation mechanisms.\cite{suit_arch,tcg_tpm_iot} Neglecting these aspects can result in devices that cannot be securely repurposed or that retain sensitive keys and identities beyond their intended usage period.\cite{tcg_iot}
+
+\subsection{Privacy and Policy Concerns}
+Remote attestation can reveal detailed information about device software and configuration to verifiers, which raises privacy concerns for end-users and manufacturers. Depending on how evidence and attestation results are structured, they may leak information about firmware versions, configurations, or even user-installed applications.\cite{rats_arch,charra_pm} At scale, attestation infrastructures produce rich telemetry about device fleets that must be protected and governed by appropriate policies to prevent misuse.
+
+Another concern is that strong trusted computing and attestation mechanisms could be misused to enforce very restrictive control over devices, for example by preventing independent repair, modification, or installation of alternative firmware. This touches on broader debates about right-to-repair and user autonomy and shows that security mechanisms can have non-technical side effects.\cite{tcg_iot}
+
+\subsection{Verification and Supply-Chain Trust}
+Trusted computing foundations themselves must be trustworthy, yet formal verification of hardware and firmware components is difficult and expensive. VRASED demonstrates the benefits of verifiable-by-design approaches for comparatively small RA architectures, but such examples are still rare and usually target narrow functionality.\cite{vRased_usenix,root_of_trust_lowend} Scaling similar techniques to complex TEEs, full secure boot chains, and complete update frameworks remains an open research problem.\cite{ra_survey,resource_constrained}
+
+Supply-chain trust is another concern: vulnerabilities or backdoors introduced in hardware, ROM code, or vendor-provided firmware can undermine roots of trust in ways that are difficult for integrators to detect. While attestation can sometimes detect deviations from expected firmware, it cannot prove that a given hardware or ROM implementation is free of intentional or accidental flaws.\cite{root_of_trust_lowend} This motivates further work on more transparent supply chains, third-party certification, and mechanisms to detect and respond to supply-chain compromises.\cite{tcg_iot}
 
 \section{Conclusion}
-\label{sec:conclusion}
+Trusted computing techniques provide powerful tools for improving the security of IoT devices by anchoring device identity, software integrity, and secure updates in hardware-supported roots of trust, TEEs, and standardized attestation and update protocols.\cite{tcg_iot,rats_arch,suit_survey} Through TPM- and DICE-style mechanisms, TEEs such as TrustZone-M, and protocols standardized in IETF RATS and SUIT, it is possible to build deeply embedded devices that can be remotely identified, measured, and updated with strong cryptographic assurances, even under tight resource constraints.\cite{suit_arch,root_of_trust_lowend}
 
-% TODO: Start writing...
+Case studies of TPM-based IoT platforms, TrustZone-M-based secure systems, and formally verified attestation schemes such as VRASED show that these approaches are not only theoretical but can be applied to real devices and deployments.\cite{tzm_framework,vRased_usenix,tcg_tpm_iot} At the same time, significant limitations remain, including hardware and performance overheads for the smallest devices, heterogeneity and interoperability challenges, deployment and usability issues, and privacy and policy questions around large-scale attestation.
 
+For future work, it seems important to further reduce the cost of roots of trust, improve developer tooling and abstractions, extend formal verification to broader parts of the trusted computing stack, and develop governance frameworks that balance security with user autonomy in the IoT era.\cite{resource_constrained,ra_survey,tcg_iot}
 
-\bibliographystyle{IEEEtran}
-\bibliography{references}
+\section*{Acknowledgment}
+This work was carried out as part of a university seminar on low-power deep edge computing and security. The author would like to thank the seminar organizers and participants for helpful discussions on IoT security and trusted computing.
+
+\begin{thebibliography}{99}
+
+\bibitem{tcg_iot}
+Trusted Computing Group, ``Internet of Things (IoT) Sub Group,'' accessed 2025. [Online]. Available: \url{https://trustedcomputinggroup.org/work-groups/internet-of-things/}
+
+\bibitem{suit_survey}
+``Secure Firmware Updates for Constrained IoT Devices Using Open Standards: A Reality Check,'' \emph{IEEE Access}, vol.~7, 2019.
+
+\bibitem{tee_trustcom}
+``SoK: Hardware-Supported Trusted Execution Environments,'' 2022.
+
+\bibitem{tzm_runtime}
+L.~Luo et al., ``On Runtime Software Security of TrustZone-M Based IoT Devices,'' 2020.
+
+\bibitem{tzm_framework}
+L.~Luo et al., ``On Security of TrustZone-M-Based IoT Systems,'' \emph{IEEE Internet of Things Journal}, 2022.
+
+\bibitem{rats_arch}
+H.~Birkholz et al., ``Remote ATtestation procedureS (RATS) Architecture,'' RFC~9334, IETF, 2022.
+
+\bibitem{charra_pm}
+R.~Hiesgen et al., ``CHARRA-PM: An Attestation Approach Relying on the Passport Model,'' in \emph{Proc. Int. Conf. on Security and Cryptography}, 2023.
+
+\bibitem{suit_arch}
+B.~Moran et al., ``A Firmware Update Architecture for Internet of Things Devices,'' RFC~9019, IETF, 2021.
+
+\bibitem{ra_survey}
+N.~Alexandris et al., ``State-of-the-Art Software-Based Remote Attestation: Opportunities and Open Issues for Internet of Things,'' \emph{Sensors}, vol.~21, no.~5, 2021.
+
+\bibitem{root_of_trust_lowend}
+P.~Nunes et al., ``GAROTA: Generalized Active Root-of-Trust Architecture,'' 2021.
+
+\bibitem{vRased_usenix}
+P.~De~Oliveira~Nunes et al., ``VRASED: A Verified Hardware/Software Co-Design for Remote Attestation,'' in \emph{Proc. USENIX Security Symp.}, 2019.
+
+\bibitem{tcg_tpm_iot}
+``A Security Framework for Increasing Data and Device Integrity in Internet of Things Systems,'' \emph{Sensors}, vol.~23, no.~17, 2023.
+
+\bibitem{resource_constrained}
+``Remote Attestation: A Literature Review,'' 2021.
+
+\end{thebibliography}
 
 \end{document}
